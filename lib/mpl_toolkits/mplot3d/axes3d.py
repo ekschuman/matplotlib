@@ -29,6 +29,9 @@ from matplotlib.axes._base import _axis_method_wrapper
 from matplotlib.transforms import Bbox
 from matplotlib.tri.triangulation import Triangulation
 
+import matplotlib.patches as mpatches
+from matplotlib.patches import FancyArrowPatch
+
 from . import art3d
 from . import proj3d
 from . import axis3d
@@ -39,6 +42,24 @@ def unit_bbox():
     box = Bbox(np.array([[0, 0], [1, 1]]))
     return box
 
+# Modified from user CT Zhu at https://stackoverflow.com/questions/22867620/putting-arrowheads-on-vectors-in-matplotlibs-3d-plot
+class Arrow3D(mpatches.FancyArrowPatch):
+    def __init__(self, xs, ys, zs, *args, **kwargs):
+        FancyArrowPatch.__init__(self, (0.0, 0.0), (0.0, 0.0), *args, **kwargs)
+        self._verts3d = xs, ys, zs
+
+    def draw(self, renderer):
+        xs3d, ys3d, zs3d = self._verts3d
+        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
+        self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
+        FancyArrowPatch.draw(self, renderer)
+
+    # If attached as a patch to the axes, do_3d_projection will be the draw call
+    def do_3d_projection(self, renderer):
+        xs3d, ys3d, zs3d = self._verts3d
+        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
+        self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
+        FancyArrowPatch.draw(self, renderer)
 
 @cbook._define_aliases({
     "xlim3d": ["xlim"], "ylim3d": ["ylim"], "zlim3d": ["zlim"]})
@@ -135,6 +156,45 @@ class Axes3D(Axes):
         # for bounding box calculations
         for k in self.spines.keys():
             self.spines[k].set_visible(False)
+
+    def arrow(self, x, y, z, dx, dy, dz, **kwargs):
+        """
+        Add an arrow to the axes, modified from the 2D version of arrow.
+
+        This draws an arrow from ``(x, y, z)`` to ``(x+dx, y+dy, z+dz)``.
+
+        Parameters
+        ----------
+        x, y, z: float
+            The x, y and z coordinates of the arrow base.
+
+        dx, dy, dz : float
+            The length of the arrow along x and y direction.
+
+        %(FancyArrow)s
+
+        Returns
+        -------
+        `.Arrow3D`
+            The created `.Arrow3D` object.
+
+        """
+        # Strip away units for the underlying patch since units
+        # do not make sense to most patch-like code
+        x = self.convert_xunits(x)
+        y = self.convert_yunits(y)
+        z = self.convert_yunits(z)
+        dx = self.convert_xunits(dx)
+        dy = self.convert_yunits(dy)
+        dz = self.convert_yunits(dz)
+
+        # a = Arrow3D(x, y, z, dx, dy, dz, **kwargs)
+        a = Arrow3D([x, x + dx], [y, y + dy],
+                    [z, z + dz], mutation_scale=20,
+                    lw=3, arrowstyle="-|>", color="r")
+        self.add_patch(a)
+        self._request_autoscale_view()
+        return a
 
     def set_axis_off(self):
         self._axis3don = False
